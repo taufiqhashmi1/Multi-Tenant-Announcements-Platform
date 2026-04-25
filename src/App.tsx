@@ -11,6 +11,7 @@ import Dashboard from "./components/Dashboard";
 import DummyPage from "./components/DummyPage";
 import Stakeholders from "./components/Stakeholders";
 import Settings from "./components/Settings";
+import VerifyEmail from "./components/VerifyEmail"; // 1. Imported VerifyEmail component
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -58,16 +59,26 @@ export default function App() {
       </div>
     );
   }
+
+  // 1. THE ROADBLOCK: Trap unverified email/password users immediately
+  if (user && user.providerData[0]?.providerId === 'password' && !user.emailVerified) {
+    return (
+      <>
+        <Toaster position="top-right" />
+        <VerifyEmail email={user.email} />
+      </>
+    );
+  }
   
-  // 1. Not authenticated -> Show Login/Signup
+  // 2. Not authenticated -> Show Login/Signup
   if (!user) return <AuthPage />;
   
-  // 2. Authenticated but onboarding incomplete -> Show Onboarding
+  // 3. Authenticated but onboarding incomplete -> Show Onboarding
   if (userProfile && userProfile.onboardingCompleted === false) {
     return <Onboarding user={user} profile={userProfile} />;
   }
 
-  // 3. Page Router
+  // 4. Page Router
   const renderContent = () => {
     // Helper to get role (You can abstract this or just fetch it inside Stakeholders)
     const currentRole = userProfile?.role || "employee"; // Assuming you fetch role into profile or Stakeholders fetches it
@@ -86,7 +97,7 @@ export default function App() {
     }
   };
 
-  // 4. Fully authenticated and onboarded -> Show Main App
+  // 5. Fully authenticated and onboarded -> Show Main App
   return (
     <div className="flex flex-col md:flex-row min-h-screen bg-[#F8F9FA] text-gray-900 font-sans">
       <Toaster position="top-right" />

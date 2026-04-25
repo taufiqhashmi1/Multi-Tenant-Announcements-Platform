@@ -9,45 +9,49 @@ import toast from "react-hot-toast";
 export default function Login({ onToggle }: { onToggle: () => void }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
   const { executeRecaptcha } = useGoogleReCaptcha();
 
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsLoading(true);
     const loadingToast = toast.loading("Securing connection...");
     
     try {
       if (!executeRecaptcha) {
-        toast.error("Captcha is not ready yet.", { id: loadingToast });
-        return;
+        throw new Error("Captcha is not ready yet. Please wait a moment.");
       }
 
       const token = await executeRecaptcha("login");
       const verifyCaptcha = httpsCallable(functions, "verifyCaptcha");
       await verifyCaptcha({ token });
 
-      toast.loading("Signing in...", { id: loadingToast });
+      toast.loading("Verifying credentials...", { id: loadingToast });
       const { user } = await signInWithEmailAndPassword(auth, email, password);
       
       if (!user.emailVerified) {
          toast.error("Please verify your email before logging in. Check your inbox.", { id: loadingToast, duration: 5000 });
          await signOut(auth);
+         setIsLoading(false);
          return;
       }
 
       toast.success("Welcome back!", { id: loadingToast });
     } catch (error: any) {
       toast.error(error.message || "Login failed or bot detected.", { id: loadingToast });
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const handleGoogleLogin = async () => {
+    setIsLoading(true);
     const loadingToast = toast.loading("Connecting to Google...");
     try {
       const userCredential = await signInWithPopup(auth, googleProvider);
       const { user } = userCredential;
       const details = getAdditionalUserInfo(userCredential);
 
-      // If this is their very first time logging in with Google, set up their database profile
       if (details?.isNewUser) {
         toast.loading("Setting up your workspace...", { id: loadingToast });
         
@@ -55,10 +59,7 @@ export default function Login({ onToggle }: { onToggle: () => void }) {
         const orgId = newOrgRef.id;
         const orgName = `${user.displayName || 'User'}'s Workspace`;
 
-        await setDoc(newOrgRef, {
-          name: orgName,
-          createdAt: new Date()
-        });
+        await setDoc(newOrgRef, { name: orgName, createdAt: new Date() });
 
         await setDoc(doc(db, "users", user.uid), {
           uid: user.uid,
@@ -79,9 +80,10 @@ export default function Login({ onToggle }: { onToggle: () => void }) {
       } else {
         toast.success("Welcome back!", { id: loadingToast });
       }
-
     } catch (error: any) {
       toast.error(error.message || "Google sign-in failed.", { id: loadingToast });
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -95,7 +97,8 @@ export default function Login({ onToggle }: { onToggle: () => void }) {
             <label className="text-xs font-bold text-gray-500 uppercase">Email Address</label>
             <input
               type="email"
-              className="w-full mt-1 p-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4338CA] transition text-sm md:text-base"
+              disabled={isLoading}
+              className="w-full mt-1 p-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4338CA] transition text-sm md:text-base disabled:bg-gray-100 disabled:text-gray-400"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
@@ -105,16 +108,28 @@ export default function Login({ onToggle }: { onToggle: () => void }) {
             <label className="text-xs font-bold text-gray-500 uppercase">Password</label>
             <input
               type="password"
+              disabled={isLoading}
               autoComplete="current-password"
-              className="w-full mt-1 p-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4338CA] transition text-sm md:text-base"
+              className="w-full mt-1 p-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4338CA] transition text-sm md:text-base disabled:bg-gray-100 disabled:text-gray-400"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
             />
         </div>
 
-        <button type="submit" className="w-full bg-[#4338CA] text-white p-3 rounded-lg font-bold shadow-lg shadow-indigo-200 hover:bg-[#3730A3] transition">
-          Sign In
+        <button 
+          type="submit" 
+          disabled={isLoading}
+          className="w-full bg-[#4338CA] text-white p-3 rounded-lg font-bold shadow-lg shadow-indigo-200 hover:bg-[#3730A3] transition disabled:opacity-70 flex justify-center items-center h-12"
+        >
+          {isLoading ? (
+            <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+          ) : (
+            "Sign In"
+          )}
         </button>
       </form>
 
@@ -131,7 +146,8 @@ export default function Login({ onToggle }: { onToggle: () => void }) {
         <button 
           onClick={handleGoogleLogin} 
           type="button"
-          className="mt-4 w-full bg-white border border-gray-200 text-gray-700 p-3 rounded-lg font-medium hover:bg-gray-50 transition flex items-center justify-center space-x-2"
+          disabled={isLoading}
+          className="mt-4 w-full bg-white border border-gray-200 text-gray-700 p-3 rounded-lg font-medium hover:bg-gray-50 transition flex items-center justify-center space-x-2 disabled:opacity-50 h-12"
         >
           <img src="https://www.svgrepo.com/show/475656/google-color.svg" alt="Google" className="w-5 h-5" />
           <span>Google</span>
@@ -140,7 +156,8 @@ export default function Login({ onToggle }: { onToggle: () => void }) {
 
       <button 
         onClick={onToggle} 
-        className="mt-8 text-sm text-gray-500 hover:text-[#4338CA] w-full text-center font-medium transition"
+        disabled={isLoading}
+        className="mt-8 text-sm text-gray-500 hover:text-[#4338CA] w-full text-center font-medium transition disabled:opacity-50"
       >
         Don't have an account? <span className="text-[#4338CA]">Sign up</span>
       </button>

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { createUserWithEmailAndPassword, updateProfile, sendEmailVerification, signInWithPopup, getAdditionalUserInfo } from "firebase/auth";
+import { createUserWithEmailAndPassword, updateProfile, sendEmailVerification, signInWithPopup, getAdditionalUserInfo, signOut } from "firebase/auth";
 import { doc, setDoc, getDoc, collection, addDoc } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { auth, db, functions, googleProvider } from "../lib/firebase";
@@ -9,8 +9,10 @@ import toast from "react-hot-toast";
 export default function SignUp({ onToggle, initialInviteCode }: { onToggle: () => void, initialInviteCode: string | null }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [name, setName] = useState("");
   const [inviteCode, setInviteCode] = useState(initialInviteCode || "");
+  const [isLoading, setIsLoading] = useState(false);
   const { executeRecaptcha } = useGoogleReCaptcha();
 
   const validatePassword = (pass: string) => {
@@ -21,33 +23,36 @@ export default function SignUp({ onToggle, initialInviteCode }: { onToggle: () =
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    if (password !== confirmPassword) {
+      toast.error("Passwords do not match.");
+      return;
+    }
+
     if (!validatePassword(password)) {
       toast.error("Password must be 8+ chars and include uppercase, lowercase, number, and special character.");
       return;
     }
 
+    setIsLoading(true);
     const loadingToast = toast.loading("Securing connection...");
 
     try {
       if (!executeRecaptcha) {
-        toast.error("Captcha is not ready yet.", { id: loadingToast });
-        return;
+        throw new Error("Captcha is not ready yet. Please wait a moment.");
       }
 
-      // 1. Generate v3 Token silently
       const token = await executeRecaptcha("signup");
-
-      // 2. Verify Token with Cloud Function
       const verifyCaptcha = httpsCallable(functions, "verifyCaptcha");
       await verifyCaptcha({ token });
 
-      toast.loading("Processing...", { id: loadingToast });
+      toast.loading("Building your workspace...", { id: loadingToast });
 
       let orgId = "";
       let role = "admin";
       let orgName = `${name}'s Workspace`; 
+      let isNewOrg = false;
 
-      // 3. Organization Logic
+      // 1. Check Invite Code FIRST (Read-only, allowed by rules)
       if (inviteCode && inviteCode.trim() !== "") {
         const inviteRef = doc(db, "invites", inviteCode.trim());
         const inviteSnap = await getDoc(inviteRef);
@@ -58,27 +63,26 @@ export default function SignUp({ onToggle, initialInviteCode }: { onToggle: () =
           role = data.role;
         } else {
           toast.error("Invalid invite link. Leave blank to create a new workspace.", { id: loadingToast });
+          setIsLoading(false);
           return;
         }
       } else {
-        // Create a BRAND NEW organization document with a unique ID
+        // Just generate the ID, do not write to DB yet
         const newOrgRef = doc(collection(db, "organizations"));
         orgId = newOrgRef.id;
-        
-        await setDoc(newOrgRef, {
-          name: orgName,
-          createdAt: new Date()
-        });
+        isNewOrg = true;
       }
 
-      // 4. Create Authentication Account
+      // 2. Create Authentication Account (User is now signed in)
       const { user } = await createUserWithEmailAndPassword(auth, email, password);
       await updateProfile(user, { displayName: name });
-      
-      // 5. Send Verification Email
       await sendEmailVerification(user);
 
-      // 6. Create User Profile
+      // 3. Perform Secure Database Writes
+      if (isNewOrg) {
+        await setDoc(doc(db, "organizations", orgId), { name: orgName, createdAt: new Date() });
+      }
+
       await setDoc(doc(db, "users", user.uid), {
         uid: user.uid,
         name,
@@ -88,14 +92,16 @@ export default function SignUp({ onToggle, initialInviteCode }: { onToggle: () =
         createdAt: new Date()
       });
 
-      // 7. Create Membership Record
       await addDoc(collection(db, "users", user.uid, "memberships"), {
         orgId,
         role,
         joinedAt: new Date()
       });
 
-      toast.success("Account created! Please check your email to verify.", { id: loadingToast, duration: 5000 });
+      // 4. Force Sign Out immediately to drop the session lock and prevent premature routing
+      await signOut(auth);
+
+      toast.success("Account created! Please check your email to verify before logging in.", { id: loadingToast, duration: 6000 });
       onToggle();
 
     } catch (error: any) {
@@ -104,25 +110,27 @@ export default function SignUp({ onToggle, initialInviteCode }: { onToggle: () =
       } else {
         toast.error(error.message || "Sign up failed or bot detected.", { id: loadingToast });
       }
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const handleGoogleSignUp = async () => {
+    setIsLoading(true);
     const loadingToast = toast.loading("Connecting to Google...");
     try {
       const userCredential = await signInWithPopup(auth, googleProvider);
       const { user } = userCredential;
       const details = getAdditionalUserInfo(userCredential);
 
-      // Only run setup if they are a brand new user
       if (details?.isNewUser) {
         toast.loading("Setting up your workspace...", { id: loadingToast });
         
         let orgId = "";
         let role = "admin";
         let orgName = `${user.displayName || 'User'}'s Workspace`;
+        let isNewOrg = false;
 
-        // Check Invite Code for Google Signups too
         if (inviteCode && inviteCode.trim() !== "") {
           const inviteRef = doc(db, "invites", inviteCode.trim());
           const inviteSnap = await getDoc(inviteRef);
@@ -132,19 +140,22 @@ export default function SignUp({ onToggle, initialInviteCode }: { onToggle: () =
             orgId = data.orgId;
             role = data.role;
           } else {
-            // Fallback: If invite is invalid but Auth is already created via Google, just create a new workspace
             toast.error("Invalid invite link. Creating a personal workspace instead.", { id: loadingToast, duration: 4000 });
             const newOrgRef = doc(collection(db, "organizations"));
             orgId = newOrgRef.id;
-            await setDoc(newOrgRef, { name: orgName, createdAt: new Date() });
+            isNewOrg = true;
           }
         } else {
           const newOrgRef = doc(collection(db, "organizations"));
           orgId = newOrgRef.id;
-          await setDoc(newOrgRef, { name: orgName, createdAt: new Date() });
+          isNewOrg = true;
         }
 
-        // Create User Profile
+        // Database Writes
+        if (isNewOrg) {
+          await setDoc(doc(db, "organizations", orgId), { name: orgName, createdAt: new Date() });
+        }
+
         await setDoc(doc(db, "users", user.uid), {
           uid: user.uid,
           name: user.displayName || "Google User",
@@ -154,7 +165,6 @@ export default function SignUp({ onToggle, initialInviteCode }: { onToggle: () =
           createdAt: new Date()
         });
 
-        // Create Membership Record
         await addDoc(collection(db, "users", user.uid, "memberships"), {
           orgId,
           role,
@@ -165,9 +175,10 @@ export default function SignUp({ onToggle, initialInviteCode }: { onToggle: () =
       } else {
         toast.success("Account already exists. Welcome back!", { id: loadingToast });
       }
-
     } catch (error: any) {
       toast.error(error.message || "Google sign-up failed.", { id: loadingToast });
+    } finally {
+      setIsLoading(false);
     }
   };
   
@@ -179,23 +190,38 @@ export default function SignUp({ onToggle, initialInviteCode }: { onToggle: () =
       <form onSubmit={handleSignUp} className="space-y-4">
         <div>
             <label className="text-xs font-bold text-gray-500 uppercase">Full Name</label>
-            <input type="text" className="w-full mt-1 p-2.5 md:p-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#4338CA] outline-none text-sm md:text-base" value={name} onChange={e => setName(e.target.value)} required />
+            <input type="text" disabled={isLoading} className="w-full mt-1 p-2.5 md:p-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#4338CA] outline-none text-sm md:text-base disabled:bg-gray-100 disabled:text-gray-400" value={name} onChange={e => setName(e.target.value)} required />
         </div>
         <div>
             <label className="text-xs font-bold text-gray-500 uppercase">Email Address</label>
-            <input type="email" className="w-full mt-1 p-2.5 md:p-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#4338CA] outline-none text-sm md:text-base" value={email} onChange={e => setEmail(e.target.value)} required />
+            <input type="email" disabled={isLoading} className="w-full mt-1 p-2.5 md:p-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#4338CA] outline-none text-sm md:text-base disabled:bg-gray-100 disabled:text-gray-400" value={email} onChange={e => setEmail(e.target.value)} required />
         </div>
         <div>
             <label className="text-xs font-bold text-gray-500 uppercase">Password</label>
-            <input type="password" placeholder="Min 8 chars, 1 uppercase, 1 special" className="w-full mt-1 p-2.5 md:p-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#4338CA] outline-none text-sm md:text-base" value={password} onChange={e => setPassword(e.target.value)} required />
+            <input type="password" disabled={isLoading} placeholder="Min 8 chars, 1 uppercase, 1 special" className="w-full mt-1 p-2.5 md:p-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#4338CA] outline-none text-sm md:text-base disabled:bg-gray-100 disabled:text-gray-400" value={password} onChange={e => setPassword(e.target.value)} required />
+        </div>
+        <div>
+            <label className="text-xs font-bold text-gray-500 uppercase">Confirm Password</label>
+            <input type="password" disabled={isLoading} placeholder="Repeat your password" className="w-full mt-1 p-2.5 md:p-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#4338CA] outline-none text-sm md:text-base disabled:bg-gray-100 disabled:text-gray-400" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} required />
         </div>
         <div>
             <label className="text-xs font-bold text-gray-500 uppercase">Workspace Invite Code</label>
-            <input type="text" className="w-full mt-1 p-2.5 md:p-3 border border-gray-200 rounded-lg bg-gray-50 text-sm md:text-base" value={inviteCode} onChange={e => setInviteCode(e.target.value)} placeholder="Optional" />
+            <input type="text" disabled={isLoading} className="w-full mt-1 p-2.5 md:p-3 border border-gray-200 rounded-lg bg-gray-50 text-sm md:text-base disabled:text-gray-400" value={inviteCode} onChange={e => setInviteCode(e.target.value)} placeholder="Optional" />
         </div>
         
-        <button type="submit" className="w-full bg-[#4338CA] text-white p-2.5 md:p-3 rounded-lg font-bold shadow-indigo-200 shadow-lg hover:bg-[#3730A3] transition text-sm md:text-base mt-2">
-          Create Account
+        <button 
+          type="submit" 
+          disabled={isLoading}
+          className="w-full bg-[#4338CA] text-white p-2.5 md:p-3 rounded-lg font-bold shadow-indigo-200 shadow-lg hover:bg-[#3730A3] transition text-sm md:text-base mt-2 disabled:opacity-70 flex justify-center items-center h-12"
+        >
+          {isLoading ? (
+            <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+          ) : (
+            "Create Account"
+          )}
         </button>
       </form>
 
@@ -212,14 +238,19 @@ export default function SignUp({ onToggle, initialInviteCode }: { onToggle: () =
         <button 
           onClick={handleGoogleSignUp} 
           type="button"
-          className="mt-4 w-full bg-white border border-gray-200 text-gray-700 p-3 rounded-lg font-medium hover:bg-gray-50 transition flex items-center justify-center space-x-2"
+          disabled={isLoading}
+          className="mt-4 w-full bg-white border border-gray-200 text-gray-700 p-3 rounded-lg font-medium hover:bg-gray-50 transition flex items-center justify-center space-x-2 disabled:opacity-50 h-12"
         >
           <img src="https://www.svgrepo.com/show/475656/google-color.svg" alt="Google" className="w-5 h-5" />
           <span>Google</span>
         </button>
       </div>
 
-      <button onClick={onToggle} className="mt-6 text-sm text-gray-500 hover:text-[#4338CA] w-full text-center font-medium">
+      <button 
+        onClick={onToggle} 
+        disabled={isLoading}
+        className="mt-6 text-sm text-gray-500 hover:text-[#4338CA] w-full text-center font-medium disabled:opacity-50"
+      >
         Already have an account? <span className="text-[#4338CA]">Sign in</span>
       </button>
     </div>
