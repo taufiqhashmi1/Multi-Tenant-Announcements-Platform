@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import type { User } from "firebase/auth";
-import { collection, query, orderBy, onSnapshot } from "firebase/firestore";
+import { collection, query, orderBy, where, onSnapshot } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { Search, Image as ImageIcon, Paperclip } from "lucide-react";
 import AnnouncementCard from "./AnnouncementCard";
@@ -11,7 +11,7 @@ interface FeedProps {
   activeOrgId: string;
 }
 
-export default function AnnouncementsFeed({ user }: FeedProps) {
+export default function AnnouncementsFeed({ user, activeOrgId }: FeedProps) {
   const [rawAnnouncements, setRawAnnouncements] = useState<any[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -23,13 +23,22 @@ export default function AnnouncementsFeed({ user }: FeedProps) {
   const [showPinnedOnly, setShowPinnedOnly] = useState(false);
 
   useEffect(() => {
-    const q = query(collection(db, "announcements"), orderBy("createdAt", "desc"));
+    if (!activeOrgId) return;
+    
+    setLoading(true);
+    // STAMPED QUERY: This completely stops the bleeding between workspaces
+    const q = query(
+      collection(db, "announcements"), 
+      where("orgId", "==", activeOrgId), 
+      orderBy("createdAt", "desc")
+    );
+    
     const unsubscribe = onSnapshot(q, (snapshot) => {
       setRawAnnouncements(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-      setLoading(false); // Add this line
+      setLoading(false); 
     });
     return () => unsubscribe();
-  }, []);
+  }, [activeOrgId]); // Make sure this re-runs when the user switches orgs
 
   // Extract unique authors for the dropdown
   const uniqueAuthors = useMemo(() => {
@@ -173,7 +182,13 @@ export default function AnnouncementsFeed({ user }: FeedProps) {
          </div>
       </div>
 
-      {isModalOpen && <CreateAnnouncementModal user={user} onClose={() => setIsModalOpen(false)} />}
+      {isModalOpen && (
+        <CreateAnnouncementModal 
+          user={user} 
+          activeOrgId={activeOrgId} // IMPORTANT: Pass the active org to the modal so it gets stamped on creation!
+          onClose={() => setIsModalOpen(false)} 
+        />
+      )}
     </div>
   );
 }

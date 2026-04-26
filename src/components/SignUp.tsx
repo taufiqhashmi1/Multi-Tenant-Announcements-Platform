@@ -92,7 +92,7 @@ export default function SignUp({ onToggle, initialInviteCode }: { onToggle: () =
         createdAt: new Date()
       });
 
-      await addDoc(collection(db, "users", user.uid, "memberships"), {
+      await setDoc(doc(db, "users", user.uid, "memberships", orgId), {
         orgId,
         role,
         joinedAt: new Date()
@@ -165,7 +165,7 @@ export default function SignUp({ onToggle, initialInviteCode }: { onToggle: () =
           createdAt: new Date()
         });
 
-        await addDoc(collection(db, "users", user.uid, "memberships"), {
+        await setDoc(doc(db, "users", user.uid, "memberships", orgId), {
           orgId,
           role,
           joinedAt: new Date()

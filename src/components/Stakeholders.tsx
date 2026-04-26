@@ -115,7 +115,7 @@ export default function Stakeholders({ activeOrgId, currentUserRole }: { activeO
                         <option value="admin">Admin</option>
                      </select>
                      <button onClick={() => handleRemove(member.uid)} className="text-xs text-red-500 hover:bg-red-50 px-2 py-1 rounded transition font-bold">
-                       Remove
+                        Remove
                      </button>
                   </td>
                 )}

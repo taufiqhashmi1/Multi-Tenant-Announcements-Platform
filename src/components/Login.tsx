@@ -70,7 +70,7 @@ export default function Login({ onToggle }: { onToggle: () => void }) {
           createdAt: new Date()
         });
 
-        await addDoc(collection(db, "users", user.uid, "memberships"), {
+        await setDoc(doc(db, "users", user.uid, "memberships", orgId), {
           orgId,
           role: "admin",
           joinedAt: new Date()

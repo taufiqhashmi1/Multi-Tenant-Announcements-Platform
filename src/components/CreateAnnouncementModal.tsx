@@ -10,6 +10,7 @@ import Placeholder from '@tiptap/extension-placeholder';
 
 interface ModalProps {
   user: User;
+  activeOrgId: string; // Added to receive the current workspace ID
   onClose: () => void;
 }
 
@@ -61,7 +62,8 @@ const MenuBar = ({ editor }: { editor: any }) => {
   );
 };
 
-export default function CreateAnnouncementModal({ user, onClose }: ModalProps) {
+// Added activeOrgId to the component props
+export default function CreateAnnouncementModal({ user, activeOrgId, onClose }: ModalProps) {
   const [title, setTitle] = useState("");
   const [isPinned, setIsPinned] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
@@ -128,6 +130,7 @@ export default function CreateAnnouncementModal({ user, onClose }: ModalProps) {
         fileAttachments.push(...(await Promise.all(fileUploads)));
       }
 
+      // Ensure the announcement is strictly tied to the current organization
       await addDoc(collection(db, "announcements"), {
         title,
         content: htmlContent,
@@ -135,6 +138,7 @@ export default function CreateAnnouncementModal({ user, onClose }: ModalProps) {
         authorName: user.displayName || user.email?.split('@')[0],
         authorPhoto: user.photoURL || `https://ui-avatars.com/api/?name=${user.email}`,
         authorId: user.uid,
+        orgId: activeOrgId, // STAMP THE ORGANIZATION ID HERE
         createdAt: serverTimestamp(),
         isPinned,
         imageUrls,

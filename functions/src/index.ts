@@ -101,7 +101,8 @@ export const directAssignUser = functions.https.onCall(async (request) => {
       throw new functions.https.HttpsError("already-exists", "User is already in this organization.");
     }
 
-    await membershipRef.add({
+    // STRICT WRITE: Using the orgId as the document ID instead of adding a random one
+    await membershipRef.doc(orgId).set({
       orgId,
       role,
       joinedAt: admin.firestore.FieldValue.serverTimestamp(),
