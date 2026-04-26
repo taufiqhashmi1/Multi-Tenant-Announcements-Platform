@@ -1,6 +1,6 @@
 import { useState, type KeyboardEvent } from "react";
 import type { User } from "firebase/auth";
-import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { collection, doc, setDoc, serverTimestamp } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db, storage } from "../lib/firebase";
 import { X, Image as ImageIcon, Paperclip, Megaphone, Bold, Italic, Strikethrough, List, ListOrdered } from "lucide-react";
@@ -108,12 +108,17 @@ export default function CreateAnnouncementModal({ user, activeOrgId, onClose }: 
     setUploading(true);
 
     try {
+      // 1. Generate the new Announcement Document ID FIRST
+      const newAnnouncementRef = doc(collection(db, "announcements"));
+      const announcementId = newAnnouncementRef.id;
+
       const imageUrls: string[] = [];
       const fileAttachments: { url: string; name: string }[] = [];
 
       if (images.length > 0) {
         const imageUploads = images.map(async (image) => {
-          const imageRef = ref(storage, `announcements/images/${Date.now()}_${image.name}`);
+          // Store images securely under the specific organization and announcement
+          const imageRef = ref(storage, `organizations/${activeOrgId}/announcements/${announcementId}/images/${Date.now()}_${image.name}`);
           await uploadBytes(imageRef, image);
           return getDownloadURL(imageRef);
         });
@@ -122,7 +127,8 @@ export default function CreateAnnouncementModal({ user, activeOrgId, onClose }: 
 
       if (files.length > 0) {
         const fileUploads = files.map(async (file) => {
-          const fileRef = ref(storage, `announcements/files/${Date.now()}_${file.name}`);
+          // STRICT PATH for Donna AI: organizations/{orgId}/announcements/{announcementId}/{fileName}
+          const fileRef = ref(storage, `organizations/${activeOrgId}/announcements/${announcementId}/${file.name}`);
           await uploadBytes(fileRef, file);
           const url = await getDownloadURL(fileRef);
           return { url, name: file.name };
@@ -130,8 +136,8 @@ export default function CreateAnnouncementModal({ user, activeOrgId, onClose }: 
         fileAttachments.push(...(await Promise.all(fileUploads)));
       }
 
-      // Ensure the announcement is strictly tied to the current organization
-      await addDoc(collection(db, "announcements"), {
+      // 3. Save the actual announcement to Firestore using setDoc (NOT addDoc)
+      await setDoc(newAnnouncementRef, {
         title,
         content: htmlContent,
         tags,
@@ -143,6 +149,7 @@ export default function CreateAnnouncementModal({ user, activeOrgId, onClose }: 
         isPinned,
         imageUrls,
         fileAttachments,
+        hasDocument: fileAttachments.length > 0, // Automatically triggers the "Ask Donna" button
         likedBy: []
       });
 

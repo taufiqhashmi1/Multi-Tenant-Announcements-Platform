@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { signInWithEmailAndPassword, signInWithPopup, signOut, getAdditionalUserInfo } from "firebase/auth";
 import { httpsCallable } from "firebase/functions";
-import { doc, setDoc, collection, addDoc } from "firebase/firestore";
+import { doc, setDoc, collection} from "firebase/firestore";
 import { auth, googleProvider, functions, db } from "../lib/firebase"; 
 import { useGoogleReCaptcha } from "react-google-recaptcha-v3";
 import toast from "react-hot-toast";

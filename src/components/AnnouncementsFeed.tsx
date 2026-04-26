@@ -5,6 +5,7 @@ import { db } from "../lib/firebase";
 import { Search, Image as ImageIcon, Paperclip } from "lucide-react";
 import AnnouncementCard from "./AnnouncementCard";
 import CreateAnnouncementModal from "./CreateAnnouncementModal";
+import DocumentChat from "./DocumentChat";
 
 interface FeedProps {
   user: User;
@@ -16,6 +17,9 @@ export default function AnnouncementsFeed({ user, activeOrgId }: FeedProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   
+  // AI Chat State
+  const [activeChatId, setActiveChatId] = useState<string | null>(null);
+
   // Filter States
   const [searchQuery, setSearchQuery] = useState("");
   const [authorFilter, setAuthorFilter] = useState("Everyone");
@@ -38,7 +42,7 @@ export default function AnnouncementsFeed({ user, activeOrgId }: FeedProps) {
       setLoading(false); 
     });
     return () => unsubscribe();
-  }, [activeOrgId]); // Make sure this re-runs when the user switches orgs
+  }, [activeOrgId]);
 
   // Extract unique authors for the dropdown
   const uniqueAuthors = useMemo(() => {
@@ -118,7 +122,6 @@ export default function AnnouncementsFeed({ user, activeOrgId }: FeedProps) {
         {/* Feed */}
         <div className="space-y-6">
           {loading ? (
-             // SKELETON LOADERS
              Array.from({ length: 3 }).map((_, i) => (
                 <div key={i} className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 animate-pulse">
                    <div className="flex items-center space-x-3 mb-4">
@@ -136,7 +139,12 @@ export default function AnnouncementsFeed({ user, activeOrgId }: FeedProps) {
           ) : (
             <>
               {processedAnnouncements.map((post) => (
-                <AnnouncementCard key={post.id} post={post} currentUser={user} />
+                <AnnouncementCard 
+                  key={post.id} 
+                  post={post} 
+                  currentUser={user} 
+                  onOpenChat={() => setActiveChatId(post.id)} 
+                />
               ))}
               {processedAnnouncements.length === 0 && (
                 <div className="text-center py-12 text-gray-500">No announcements found matching your criteria.</div>
@@ -185,8 +193,18 @@ export default function AnnouncementsFeed({ user, activeOrgId }: FeedProps) {
       {isModalOpen && (
         <CreateAnnouncementModal 
           user={user} 
-          activeOrgId={activeOrgId} // IMPORTANT: Pass the active org to the modal so it gets stamped on creation!
+          activeOrgId={activeOrgId} 
           onClose={() => setIsModalOpen(false)} 
+        />
+      )}
+
+      {/* AI Document Chat Modal */}
+      {activeChatId && (
+        <DocumentChat
+          orgId={activeOrgId}
+          announcementId={activeChatId}
+          isOpen={!!activeChatId}
+          onClose={() => setActiveChatId(null)}
         />
       )}
     </div>

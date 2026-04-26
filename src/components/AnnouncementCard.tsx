@@ -10,9 +10,10 @@ import toast from "react-hot-toast";
 interface AnnouncementCardProps {
   post: any;
   currentUser: User;
+  onOpenChat: () => void;
 }
 
-export default function AnnouncementCard({ post, currentUser }: AnnouncementCardProps) {
+export default function AnnouncementCard({ post, currentUser, onOpenChat }: AnnouncementCardProps) {
   const [showComments, setShowComments] = useState(false);
   const [comments, setComments] = useState<any[]>([]);
   const [newComment, setNewComment] = useState("");
@@ -143,7 +144,7 @@ export default function AnnouncementCard({ post, currentUser }: AnnouncementCard
                                 Open
                             </a>
                             {isPdf && (
-                            <button className="flex items-center space-x-2 text-sm font-semibold text-[#4338CA] bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-full transition border border-indigo-100">
+                            <button onClick={onOpenChat} className="flex items-center space-x-2 text-sm font-semibold text-[#4338CA] bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-full transition border border-indigo-100">
                                 <Bot size={16} />
                                 <span>Ask Donna</span>
                             </button>

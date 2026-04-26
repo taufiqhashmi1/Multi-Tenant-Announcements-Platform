@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { createUserWithEmailAndPassword, updateProfile, sendEmailVerification, signInWithPopup, getAdditionalUserInfo, signOut } from "firebase/auth";
-import { doc, setDoc, getDoc, collection, addDoc } from "firebase/firestore";
+import { doc, setDoc, getDoc, collection } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { auth, db, functions, googleProvider } from "../lib/firebase";
 import { useGoogleReCaptcha } from "react-google-recaptcha-v3";
