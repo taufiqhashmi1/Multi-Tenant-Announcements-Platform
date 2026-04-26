@@ -1,120 +1,118 @@
-# Portfoliomate Announcements Feed
+# Portfoliomate: AI-Powered Multi-Tenant Announcement Platform
 
-This React + TypeScript + Vite project is a complete announcements feed for a multi-tenant private equity collaboration platform.
+Portfoliomate is a secure, multi-tenant workspace platform designed for VC firms and organizations to manage announcements and interact with complex documents via **Donna**, a specialized RAG (Retrieval-Augmented Generation) AI assistant.
 
-## What is included
+**Live URL:** https://portfoliomate-bc6de.web.app/  
+**GitHub Repository:** https://github.com/taufiqhashmi1/Multi-Tenant-Announcements-Platform
 
-- Firebase Authentication with Google sign-in and email/password.
-- Firestore-backed real-time announcements feed.
-- File attachments uploaded to Firebase Storage.
-- Automatic AI summarization of PDF attachments when a PDF is uploaded.
-- Tenant isolation by email domain.
-- Tailwind CSS for responsive UI styling.
+---
 
-## Run locally
+## 🛠 Tech Stack
+* **Frontend:** React (Vite), TypeScript, Tailwind CSS, React Markdown.
+* **Backend:** Firebase Cloud Functions (Node.js), Firebase Auth.
+* **Database:** Firestore (NoSQL) with Vector Search.
+* **AI Engine:** Google Gemini (gemini-1.5-flash) & Gemini Embeddings.
+* **Storage:** Firebase Cloud Storage.
 
-1. Install dependencies:
+---
 
-```bash
-npm install
-```
+## 📊 Database Schema
 
-2. Add Firebase and AI configuration in a `.env` file at the project root.
+Portfoliomate follows a nested sub-collection hierarchy to ensure data isolation.
 
-3. Start the dev server:
-
-```bash
-npm run dev
-```
-
-## Required environment variables
-
-Create a `.env` file with:
-
-```env
-VITE_FIREBASE_API_KEY=
-VITE_FIREBASE_AUTH_DOMAIN=
-VITE_FIREBASE_PROJECT_ID=
-VITE_FIREBASE_STORAGE_BUCKET=
-VITE_FIREBASE_MESSAGING_SENDER_ID=
-VITE_FIREBASE_APP_ID=
-VITE_FIREBASE_MEASUREMENT_ID=
-VITE_FIREBASE_DATABASE_URL=
-VITE_GEMINI_API_KEY=
-```
-
-If `VITE_GEMINI_API_KEY` is not configured, the app will still work and the announcement will save normally, but AI PDF summarization will return a placeholder note.
-
-## Announcement schema
-
-Each Firestore document in the `posts` collection follows this structure:
-
+### Organization Document
+`organizations/{orgId}`
 ```json
 {
-  "text": "Announcement message text",
-  "tenantId": "firm.com",
-  "authorId": "uid123",
-  "attachments": ["https://..."],
-  "aiSummary": {
-    "startupName": "Example LLC",
-    "fundingAmount": "$3M",
-    "summary": "Two-sentence summary of the attached PDF."
-  },
-  "createdAt": "serverTimestamp"
+  "name": "Sequoia Capital",
+  "createdAt": "2026-04-26T12:00:00Z",
+  "adminUid": "user_abc_123"
 }
 ```
 
-## Multi-tenant security
+### Announcement Document
+`organizations/{orgId}/announcements/{announcementId}`
+```json
+{
+  "title": "Quarterly Forensic Report",
+  "content": "Summary text of the announcement...",
+  "pdfUrl": "https://firebasestorage...",
+  "authorId": "user_xyz_789",
+  "createdAt": "2026-04-26T14:30:00Z",
+  "status": "ready"
+}
+```
 
-Tenant isolation is enforced by deriving `tenantId` from the authenticated user's email domain.
+### Document Chunks (For Vector Search)
+`organizations/{orgId}/announcements/{announcementId}/chunks/{chunkId}`
+```json
+{
+  "text": "Extracted paragraph from PDF...",
+  "embedding": [0.123, -0.456, 0.789, "..."], // 768-dimension vector
+  "chunkIndex": 0,
+  "createdAt": "2026-04-26T14:35:00Z"
+}
+```
 
-Example security rules:
+---
 
-- Firestore: only allow reads and writes for posts where `tenantId` matches the user's email domain.
-- Storage: only allow file uploads to the tenant-specific storage path.
+## 🔒 Multi-Tenant Security
 
-### Example Firestore rule
+### Architectural Strategy
+Data isolation is achieved through **Path-Based Segmentation**. By nesting announcements under a specific `orgId`, we create a physical boundary for every request. An employee's access is validated against their `memberships` sub-collection in their user profile.
 
-```js
-rules_version = '2';
+### Firestore Security Rules
+To guarantee that an employee at **Firm A** can never fetch an announcement from **Firm B**, we use the following rules:
+
+```javascript
 service cloud.firestore {
   match /databases/{database}/documents {
-    function tenantIdFromAuth() {
-      return request.auth.token.email.split("@")[1];
+    
+    // Helper to check if user belongs to the organization
+    function isMember(orgId) {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid)/memberships/$(orgId));
     }
 
-    match /posts/{postId} {
-      allow read, update, delete: if request.auth != null
-        && resource.data.tenantId == tenantIdFromAuth();
-      allow create: if request.auth != null
-        && request.resource.data.tenantId == tenantIdFromAuth();
-    }
-  }
-}
-```
+    match /organizations/{orgId} {
+      // Users can only read org details if they are members
+      allow read: if isMember(orgId);
 
-### Example Storage rule
+      match /announcements/{announcementId} {
+        // Strict isolation: Access granted only if orgId exists in user's memberships
+        allow read, write: if isMember(orgId);
 
-```js
-rules_version = '2';
-service firebase.storage {
-  match /b/{bucket}/o {
-    match /tenants/{tenantId}/announcements/{allPaths=**} {
-      allow read, write: if request.auth != null
-        && request.auth.token.email.split("@")[1] == tenantId;
+        match /chunks/{chunkId} {
+          allow read: if isMember(orgId);
+        }
+      }
     }
   }
 }
 ```
 
-## Notes
+---
 
-- File attachments can be images or PDFs.
-- The AI integration reads attached PDFs and automatically extracts startup name, funding amount, and a short summary.
-- The feed updates in real time via Firestore snapshot listeners.
+## 🤖 AI Usage & Implementation
 
-## Next steps
+I utilized AI (Gemini/ChatGPT) as a **collaborative architect and debugger**. 
 
-- Deploy to Firebase Hosting, Vercel, or Netlify.
-- Add richer attachment metadata to preserve file names and types.
-- Expand AI support to include document Q&A.
+**How I used AI:**
+1.  **RAG Pipeline Design:** Prompted for the most efficient way to slice PDF text into embeddings and store them for "Donna."
+2.  **Complex Debugging:** Resolved deep module interop issues between CommonJS (pdf-parse) and ESM (Vite/TypeScript) that occurred during Cloud Function deployment.
+3.  **UI Components:** Generated the initial skeleton for the `DocumentChat.tsx` modal and adjusted Tailwind animations for a "slide-in" effect.
+
+---
+
+## 🚀 Challenges Faced & Lessons Learned
+
+### 1. The PDF Parsing "Mangle"
+**Problem:** Initially, using `pdf-parse` caused the Cloud Function to crash because the TypeScript bundler was wrapping the library in an unusable object during deployment.
+**Lesson:** I learned the importance of **Module Interoperability**. I ultimately pivoted to Mozilla’s `pdfjs-dist` (v3), a more modern and stable library, and used `@ts-ignore` to handle deep-path imports that the TypeScript compiler couldn't resolve statically.
+
+### 2. Firestore Batch Limits
+**Problem:** When processing a 6MB PDF, the system generated over 800 text chunks. Firestore has a hard limit of 500 operations per batch write.
+**Lesson:** I implemented a **Hard Truncation** (499 chunks) as a safety measure and learned that for production-scale apps, I would need to implement a recursive loop to commit multiple batches for larger files.
+
+### 3. Vector Dimensionality
+**Problem:** The `gemini-embedding-001` model produces 3072 dimensions, but Firestore Vector Search supports a maximum of 2048.
+**Lesson:** I learned about **Matryoshka Embeddings**. By slicing the vector to 768 dimensions, I maintained search accuracy while fitting within the database constraints.

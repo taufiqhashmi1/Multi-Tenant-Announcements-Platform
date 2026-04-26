@@ -3,6 +3,7 @@ import { signOut } from "firebase/auth";
 import { auth } from "../lib/firebase";
 import OrgSwitcher from "./OrgSwitcher";
 import type { User } from "firebase/auth";
+import { Hash } from "lucide-react";
 
 interface SidebarProps {
   user: User;
@@ -30,7 +31,7 @@ export default function Sidebar({ user, activeOrgId, activePage, setActivePage }
       {/* Desktop Sidebar */}
       <aside className="hidden md:flex flex-col w-64 bg-white border-r border-gray-200 h-screen fixed left-0 top-0 overflow-y-auto z-40">
         <div className="p-6 flex items-center space-x-3">
-          <div className="w-8 h-8 bg-linear-to-tr from-indigo-500 to-purple-500 rounded-lg shrink-0"></div>
+          <Hash className="h-8 w-8 text-indigo-600" />
           <span className="text-xl font-bold text-gray-900">Portfoliomate</span>
         </div>
         
